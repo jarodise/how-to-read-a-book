@@ -114,7 +114,7 @@ class EpubParser:
     def _extract_from_toc(self) -> List[Chapter]:
         """
         Extract chapters from EPUB's table of contents (NCX or NavDoc).
-        Returns empty list if TOC is invalid or has too few entries.
+        Handles both tuple format and ebooklib.epub.Link objects.
         """
         chapters = []
         seen_hrefs = set()
@@ -123,47 +123,51 @@ class EpubParser:
             # Try to get TOC from ebooklib
             toc = self.book.toc
 
-            if not toc or len(toc) < self.TOC_MIN_CHAPTERS:
+            if not toc:
                 return []
 
             chapter_num = 0
 
-            def process_toc_item(item, depth=0):
-                """Recursively process TOC items."""
-                nonlocal chapter_num
+            for item in toc:
+                href = None
+                title = None
 
+                # Handle tuple format (legacy)
                 if isinstance(item, tuple):
-                    # (section, href) or (section, href, [subsections])
                     section = item[0]
                     href = item[1] if len(item) > 1 else None
+                    title = section.name if hasattr(section, 'name') else str(section)
+                    # Process subsections if present
                     subsections = item[2] if len(item) > 2 else []
 
-                    # Extract title
-                    title = section.name if hasattr(section, 'name') else str(section)
+                # Handle ebooklib.epub.Link format
+                elif hasattr(item, 'href') and hasattr(item, 'title'):
+                    href = item.href
+                    title = item.title
+                    subsections = []
 
-                    # Skip duplicates
-                    if href and href in seen_hrefs:
-                        return
+                else:
+                    continue
 
-                    if href:
-                        seen_hrefs.add(href)
+                if not title or not href:
+                    continue
 
-                    # Only create chapter for main sections (not subsections)
-                    if depth == 0 and title:
-                        chapter_num += 1
-                        chapters.append(Chapter(
-                            number=chapter_num,
-                            title=title,
-                            content="",  # Will be filled later
-                            href=href
-                        ))
+                # Skip duplicates
+                if href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
 
-                    # Process subsections
-                    for sub in subsections:
-                        process_toc_item(sub, depth + 1)
+                # Skip front/back matter
+                if not self._is_heading_important(title):
+                    continue
 
-            for item in toc:
-                process_toc_item(item)
+                chapter_num += 1
+                chapters.append(Chapter(
+                    number=chapter_num,
+                    title=title,
+                    content="",
+                    href=href
+                ))
 
         except Exception as e:
             return []
