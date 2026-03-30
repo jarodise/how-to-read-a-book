@@ -3,8 +3,13 @@
 Transform EPUB ebooks into chapter-level Markdown sources for NotebookLM, paired with an analytical reading companion persona based on Mortimer J. Adler and Charles van Doren's classic methodology.
 
 ![Demo](https://img.shields.io/badge/tested-works-green)
-![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-MIT-yellow)
+
+---
+
+**A Claude Code skill** — Let your AI agent handle the technical work while you focus on deep reading.
+
+---
 
 ## What It Does
 
@@ -16,94 +21,88 @@ The NotebookLM notebook is configured with a custom **Analytical Reading Compani
 - **Analytical Reading** — What is the author trying to prove? How is the argument structured?
 - **Syntopical Reading** — How do chapters relate? What patterns emerge?
 
-## Demo
-
-```bash
-$ python scripts/run.py ~/Downloads/TheHumanUseOfHumanBeings.epub
-
-📖 Validating EPUB file...
-✅ Found: The Human Use of Human Beings.epub
-📚 Parsing EPUB structure...
-✅ Found: 15 chapters
-📕 Title: The Human Use of Human Beings
-✍️  Converting chapters to Markdown...
-✓ 01-guide.md
-✓ 02-icybernetics-in-history.md
-✓ 03-iiprogress-and-entropy.md
-...
-📓 Creating NotebookLM notebook...
-✅ Created notebook: 7678897e-a880-4036-b26f-cf1b56b6f176
-⚙️  Configuring reading companion persona...
-📤 Uploading chapters to NotebookLM...
-✅ Uploaded all 15 chapters
-🧹 Cleaning up...
-
-🎉 SUCCESS!
-📚 Notebook: The Human Use of Human Beings — Reading Companion
-🔗 Notebook URL: https://notebooklm.google.com/notebook/7678897e-a880-4036-b26f-cf1b56b6f176
-```
-
 ## Installation
 
-### Prerequisites
-
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- NotebookLM account (Google)
-
-### Quick Install
+### For Claude Code
 
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/how-to-read-a-book.git
-cd how-to-read-a-book
-
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-
-# Or with pip
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Authenticate with NotebookLM
-notebooklm login
+npx skills add jarodise/how-to-read-a-book
 ```
 
-### Alternative: Use the install script
+### For Other Agent Systems
 
-```bash
-./install.sh
-```
+Add the skill to your agent's skill directory using the installation method your system supports (may vary by agent platform).
+
+## Prerequisites
+
+Before using this skill, ensure you have:
+
+1. **NotebookLM CLI installed and authenticated:**
+   ```bash
+   # Install notebooklm-py
+   pip install notebooklm-py playwright
+   playwright install chromium
+
+   # Authenticate (one-time)
+   notebooklm login
+   ```
+
+2. **An EPUB file locally available** on the system where the agent runs
 
 ## Usage
 
-```bash
-python scripts/run.py /path/to/your/book.epub
-```
+Once the skill is installed, simply mention you want to read a book with NotebookLM:
 
-After running, you'll receive a NotebookLM URL where you can start your analytical reading session.
+> "I want to read *Thinking, Fast and Slow* on NotebookLM. The EPUB is at `~/Downloads/thinking-fast-and-slow.epub`"
+
+The agent will:
+1. Parse your EPUB and extract chapters
+2. Create a NotebookLM notebook: `{Book Title} — Reading Companion`
+3. Configure the Analytical Reading Companion persona
+4. Upload all chapters as separate sources
+5. Provide you with the NotebookLM URL to start reading
 
 ### Example Session
 
-Once your book is uploaded, try asking:
+**You:** "Upload my book to NotebookLM. It's at `/Users/me/Books/TheHumanUseOfHumanBeings.epub`"
 
-- "What is the main problem this book is trying to solve?"
-- "Summarize the author's argument in Chapter 5"
-- "What assumptions does the author make that we should question?"
-- "How does Chapter 7 relate to the themes introduced in Chapter 2?"
-- "What is the author's thesis, and how do the chapters support it?"
+**Agent:**
+```
+📖 Found: The Human Use of Human Beings.epub
+📚 Extracted: 15 chapters
+📓 Created notebook: The Human Use of Human Beings — Reading Companion
+⚙️  Configured reading companion persona
+📤 Uploaded all 15 chapters
+✅ Done!
+
+🔗 Your notebook: https://notebooklm.google.com/notebook/abc-123
+
+Try asking your reading companion:
+• "What is the main problem this book is trying to solve?"
+• "Summarize Chapter 5's key argument"
+• "How does Chapter 7 relate to Chapter 2?"
+```
+
+### What to Ask Your Reading Companion
+
+Once your book is in NotebookLM, try questions like:
+
+- **Inspectional:** "What kind of book is this? What is it about as a whole?"
+- **Analytical:** "What is the author's thesis? What premises support it?"
+- **Critical:** "What assumptions does the author make?"
+- **Syntopical:** "How does Chapter 5 relate to the argument in Chapter 2?"
+- **Unity:** "What single question is this book trying to answer?"
 
 ## How It Works
 
-1. **EPUB Parsing** — Uses `ebooklib` to extract the table of contents (TOC-first) with heading-based fallback for poorly formatted EPUBs
-2. **Chapter Splitting** — Converts each chapter to Markdown with YAML frontmatter containing chapter number, title, and book source
-3. **Notebook Creation** — Creates a new NotebookLM notebook titled `{Book Title} — Reading Companion`
-4. **Persona Injection** — Configures the notebook with the Analytical Reading Companion system prompt
-5. **Batch Upload** — Uploads all chapter Markdown files as individual sources
-6. **Cleanup** — Removes temporary files after successful upload
+Behind the scenes, the skill:
+
+1. **Parses the EPUB** — Uses TOC-first detection with heading-based fallback
+2. **Splits chapters** — Creates Markdown files with chapter metadata
+3. **Creates notebook** — `{Book Title} — Reading Companion`
+4. **Injects persona** — Configures the Analytical Reading Companion system prompt
+5. **Uploads sources** — Each chapter becomes an addressable source
+6. **Cleans up** — Removes temporary files
 
 ## The Reading Companion Persona
 
@@ -112,81 +111,64 @@ The persona is based on the methodology from *How To Read a Book* and guides you
 - **Find the unity** — What single question is the author answering?
 - **Analyze the argument** — What are the premises, reasoning, and conclusions?
 - **Question fairly** — Distinguish knowledge from opinion; criticize only after understanding
-- **Synthesize** — How do chapters relate? What patterns emerge across the book?
+- **Synthesize** — How do chapters relate? What patterns emerge?
 
-See `assets/reading_companion_prompt.txt` for the full system prompt.
+The full system prompt is in [`assets/reading_companion_prompt.txt`](assets/reading_companion_prompt.txt).
 
 ## File Structure
 
 ```
 how-to-read-a-book/
-├── scripts/
-│   ├── run.py              # Main orchestration script
-│   ├── epub_parser.py      # EPUB parsing with TOC + fallback
-│   └── notebooklm_client.py # NotebookLM CLI wrapper
-├── assets/
-│   └── reading_companion_prompt.txt  # Analytical reading persona
-├── SKILL.md                # Agent instructions (for Claude Code)
+├── SKILL.md                 # Agent instructions
 ├── README.md               # This file
-├── requirements.txt        # Python dependencies
-├── install.sh              # Setup script
-└── package.json            # Skill metadata
+├── assets/
+│   └── reading_companion_prompt.txt
+├── scripts/
+│   ├── run.py             # Main orchestration
+│   ├── epub_parser.py     # EPUB parsing
+│   └── notebooklm_client.py
+├── package.json           # Skill metadata
+├── requirements.txt       # Python dependencies
+└── install.sh            # Setup helper
 ```
-
-## Requirements
-
-- Python 3.10+
-- `ebooklib` — EPUB parsing
-- `beautifulsoup4` — HTML content extraction
-- `notebooklm-py` — NotebookLM CLI
-- `lxml` — XML parsing
 
 ## Limitations
 
 - **EPUB format only** — PDF, MOBI, AZW not supported
 - **Local files only** — No URL downloading
-- **Single persona** — One universal reading companion (no book-type variations)
-- **Authentication required** — You must be logged into NotebookLM
+- **Single persona** — One universal reading companion
+- **Requires auth** — You must be logged into NotebookLM (`notebooklm login`)
 
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| `notebooklm command not found` | Run `pip install notebooklm-py playwright && playwright install chromium` |
-| `Not authenticated` | Run `notebooklm login` and authenticate in browser |
-| `EPUB file not found` | Check the file path; use absolute path if needed |
-| `Could not extract chapters` | Some EPUBs have unusual structure; try converting with Calibre first |
-| Chapter titles look wrong | EPUB might have poor metadata; skill falls back to heading detection |
+| `notebooklm command not found` | Ask your agent to run the setup, or install manually: `pip install notebooklm-py playwright && playwright install chromium` |
+| `Not authenticated` | Run `notebooklm login` and authenticate in your browser |
+| `Could not extract chapters` | Some EPUBs have unusual structures — try converting with Calibre first |
+| Chapter titles look wrong | The skill falls back to heading detection when metadata is poor |
 
-## Development
+## For Developers
 
-### Testing
+If you want to run the scripts directly without the agent skill:
 
 ```bash
-# Test EPUB parsing only
-python scripts/epub_parser.py /path/to/book.epub
+# Install dependencies
+pip install -r requirements.txt
 
-# Run full skill
+# Run directly
 python scripts/run.py /path/to/book.epub
 ```
 
-### Contributing
-
-1. Fork the repo
-2. Create a branch: `git checkout -b feature/my-feature`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push: `git push origin feature/my-feature`
-5. Open a Pull Request
-
 ## Inspired By
 
-- [CNinfo2Notebookllm](https://github.com/jarodise/CNinfo2Notebookllm) — Pattern reference for NotebookLM integration
-- *How To Read a Book* by Mortimer J. Adler and Charles van Doren — The analytical reading methodology
+- [CNinfo2Notebookllm](https://github.com/jarodise/CNinfo2Notebookllm) — Pattern reference
+- *How To Read a Book* by Mortimer J. Adler & Charles van Doren — The methodology
 
 ## License
 
-MIT License — see LICENSE file for details.
+MIT License — see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
-Created with Claude Code. The reading companion persona is adapted from the classical analytical reading methodology developed by Mortimer J. Adler and Charles van Doren.
+Created with Claude Code. The reading companion persona adapts the classical analytical reading methodology from Adler & van Doren.
