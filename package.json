@@ -1,0 +1,11 @@
+{
+  "name": "how-to-read-a-book",
+  "version": "1.0.0",
+  "description": "EPUB to NotebookLM reading companion skill",
+  "main": "scripts/run.py",
+  "scripts": {
+    "run": "python3 scripts/run.py"
+  },
+  "keywords": ["epub", "notebooklm", "reading", "books", "analytical-reading"],
+  "author": "user"
+}

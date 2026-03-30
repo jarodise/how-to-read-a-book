@@ -1,0 +1,4 @@
+ebooklib>=0.18
+beautifulsoup4>=4.12
+notebooklm-py>=0.1.0
+playwright>=1.40.0
