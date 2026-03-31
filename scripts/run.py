@@ -20,6 +20,20 @@ import tempfile
 from pathlib import Path
 
 # Add scripts directory to path for imports
+SCRIPT_DIR = Path(__file__).parent.absolute()
+PROJECT_ROOT = SCRIPT_DIR.parent
+VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python3"
+
+# Auto-switch to virtual environment if available
+# This ensures the skill works regardless of how it's invoked
+if (
+    VENV_PYTHON.exists()
+    and sys.executable != str(VENV_PYTHON)
+    and not os.environ.get("HTRAB_VENV_CHECKED")
+):
+    os.environ["HTRAB_VENV_CHECKED"] = "1"
+    os.execv(str(VENV_PYTHON), [str(VENV_PYTHON)] + sys.argv)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
