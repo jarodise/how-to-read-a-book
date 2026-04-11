@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
-# Short CLI for How To Read A Book
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# CLI for How To Read A Book
+# Resolve symlinks so this works when called via /usr/local/bin/notebook
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 /bin/bash "$SCRIPT_DIR/run.sh" "$@"

@@ -51,23 +51,17 @@ class EpubParser:
     """Parser for EPUB files with chapter extraction capabilities."""
 
     # Minimum chapters for TOC to be considered valid
-    TOC_MIN_CHAPTERS = 3
+    TOC_MIN_CHAPTERS = 2
 
     # Heading tags to scan for fallback detection
     HEADING_TAGS = ['h1', 'h2']
 
-    # Front matter patterns (lowercase for matching)
-    FRONT_MATTER_PATTERNS = [
-        'cover', 'title page', 'copyright', 'dedication',
-        'table of contents', 'contents', 'introduction', 'preface',
-        'foreword', 'acknowledgments', 'prologue'
-    ]
-
-    # Back matter patterns
-    BACK_MATTER_PATTERNS = [
-        'epilogue', 'afterword', 'appendix', 'glossary',
-        'bibliography', 'references', 'index', 'about the author',
-        'acknowledgements'
+    # Structural entries to skip (these have no real content)
+    # NOTE: Keep this narrow — items like Introduction, Preface, Epilogue,
+    # Appendix etc. are real content chapters in many books.
+    SKIP_TOC_PATTERNS = [
+        'cover', 'title page', 'copyright', 'table of contents',
+        'contents', 'about the author', 'about inner traditions',
     ]
 
     def __init__(self):
@@ -103,8 +97,23 @@ class EpubParser:
         soup = BeautifulSoup(html_content, 'html.parser')
         return soup.get_text(strip=True)
 
+    def _should_skip_toc_entry(self, title: str) -> bool:
+        """Check if a TOC entry is purely structural (no real content)."""
+        text_lower = title.lower().strip()
+
+        # Skip if empty or too short
+        if len(text_lower) < 2:
+            return True
+
+        # Only skip truly structural entries
+        for pattern in self.SKIP_TOC_PATTERNS:
+            if text_lower == pattern or text_lower.startswith(pattern):
+                return True
+
+        return False
+
     def _is_heading_important(self, text: str, document_name: Optional[str] = None) -> bool:
-        """Check if a heading looks like a chapter title (not front/back matter)."""
+        """Check if a heading looks like a chapter title (for heading-based fallback)."""
         text_lower = text.lower().strip()
         doc_name_lower = (document_name or "").lower()
 
@@ -117,78 +126,74 @@ class EpubParser:
         if any(p in doc_name_lower for p in nav_patterns):
             return False
 
-        # Skip if matches front/back matter patterns
-        for pattern in self.FRONT_MATTER_PATTERNS + self.BACK_MATTER_PATTERNS:
-            if pattern in text_lower:
+        # Skip clearly structural entries
+        for pattern in self.SKIP_TOC_PATTERNS:
+            if text_lower == pattern or text_lower.startswith(pattern):
                 return False
-
-        # Skip common non-chapter headings
-        skip_patterns = ['copyright', 'notes', 'footnote', 'copyright page', 'start', 'cover']
-        if any(p in text_lower for p in skip_patterns):
-            return False
 
         return True
 
     def _extract_from_toc(self) -> List[Chapter]:
         """
         Extract chapters from EPUB's table of contents (NCX or NavDoc).
-        Handles both tuple format and ebooklib.epub.Link objects.
+        Handles both tuple format (sections with children) and ebooklib.epub.Link objects.
+        Recurses into nested sections.
         """
         chapters = []
         seen_hrefs = set()
 
-        try:
-            # Try to get TOC from ebooklib
-            toc = self.book.toc
-
-            if not toc:
-                return []
-
-            chapter_num = 0
-
-            for item in toc:
+        def process_toc_items(items):
+            """Recursively process TOC items, including nested sections."""
+            for item in items:
                 href = None
                 title = None
+                children = []
 
-                # Handle tuple format (legacy)
+                # Handle tuple format: (Section, [children])
                 if isinstance(item, tuple):
                     section = item[0]
-                    href = item[1] if len(item) > 1 else None
-                    title = section.name if hasattr(section, 'name') else str(section)
-                    # Process subsections if present
-                    subsections = item[2] if len(item) > 2 else []
+                    children = item[1] if len(item) > 1 else []
+                    if hasattr(section, 'href') and section.href:
+                        href = section.href
+                    title = section.title if hasattr(section, 'title') else (
+                        section.name if hasattr(section, 'name') else str(section)
+                    )
 
                 # Handle ebooklib.epub.Link format
                 elif hasattr(item, 'href') and hasattr(item, 'title'):
                     href = item.href
                     title = item.title
-                    subsections = []
 
                 else:
                     continue
 
-                if not title or not href:
-                    continue
+                # Add this entry if it has content
+                if title and href:
+                    if href not in seen_hrefs:
+                        seen_hrefs.add(href)
+                        if not self._should_skip_toc_entry(title):
+                            chapters.append(Chapter(
+                                number=0,  # will be renumbered later
+                                title=title,
+                                content="",
+                                href=href
+                            ))
 
-                # Skip duplicates
-                if href in seen_hrefs:
-                    continue
-                seen_hrefs.add(href)
+                # Recurse into children (even if parent was skipped)
+                if children:
+                    process_toc_items(children)
 
-                # Skip front/back matter
-                if not self._is_heading_important(title):
-                    continue
-
-                chapter_num += 1
-                chapters.append(Chapter(
-                    number=chapter_num,
-                    title=title,
-                    content="",
-                    href=href
-                ))
-
-        except Exception as e:
+        try:
+            toc = self.book.toc
+            if not toc:
+                return []
+            process_toc_items(toc)
+        except Exception:
             return []
+
+        # Renumber
+        for i, ch in enumerate(chapters):
+            ch.number = i + 1
 
         return chapters if len(chapters) >= self.TOC_MIN_CHAPTERS else []
 

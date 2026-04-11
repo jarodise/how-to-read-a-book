@@ -51,6 +51,23 @@ Before using this skill, ensure you have:
 
 ## Usage
 
+### Global CLI (Recommended)
+
+Install the `notebook` command globally so you can run it from any terminal:
+
+```bash
+# One-time setup: create a symlink
+ln -sf /path/to/howtoreadabook/notebook /usr/local/bin/notebook
+```
+
+Then from **anywhere**:
+
+```bash
+notebook ~/Downloads/ThinkingFastAndSlow.epub
+```
+
+### Via Agent Skill
+
 Once the skill is installed, simply mention you want to read a book with NotebookLM:
 
 > "I want to read *Thinking, Fast and Slow* on NotebookLM. The EPUB is at `~/Downloads/thinking-fast-and-slow.epub`"
@@ -126,7 +143,8 @@ The full system prompt is in [`assets/reading_companion_prompt.txt`](assets/read
 how-to-read-a-book/
 ├── SKILL.md                 # Agent instructions
 ├── README.md               # This file
-├── read                    # CLI shortcut
+├── notebook                # CLI entry point (symlink-safe)
+├── run.sh                  # Shell wrapper (venv activation)
 ├── assets/
 │   └── reading_companion_prompt.txt
 ├── scripts/
@@ -166,8 +184,12 @@ pip install -r requirements.txt
 # Run directly
 python scripts/run.py /path/to/book.epub
 
-# Or use the CLI shortcut
-./read /path/to/book.epub
+# Or use the CLI
+./notebook /path/to/book.epub
+
+# Or install globally (run from anywhere)
+ln -sf "$(pwd)/notebook" /usr/local/bin/notebook
+notebook /path/to/book.epub
 ```
 
 ## Inspired By

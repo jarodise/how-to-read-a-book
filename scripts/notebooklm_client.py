@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 
@@ -22,8 +23,10 @@ class NotebookLMError(Exception):
 class NotebookLMClient:
     """Client for interacting with NotebookLM CLI."""
 
-    def __init__(self, timeout: int = 120):
+    def __init__(self, timeout: int = 120, max_retries: int = 3, retry_delay: float = 2.0):
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
 
     def _run_command(self, args: List[str]) -> Tuple[bool, str]:
         """
@@ -90,6 +93,7 @@ class NotebookLMClient:
     def upload_source(self, notebook_id: str, file_path: str) -> bool:
         """
         Upload a text file as a source to the notebook.
+        Retries on transient failures.
         """
         filename = os.path.basename(file_path)
         print(f"  📄 Uploading: {filename}")
@@ -99,20 +103,25 @@ class NotebookLMClient:
             print(f"    ❌ Failed to set notebook context")
             return False
 
-        # Upload the file
-        success, output = self._run_command(["source", "add", file_path])
+        # Upload with retries
+        for attempt in range(1, self.max_retries + 1):
+            success, output = self._run_command(["source", "add", file_path])
+            if success:
+                print(f"    ✅ Uploaded")
+                return True
+            if attempt < self.max_retries:
+                delay = self.retry_delay * attempt
+                print(f"    ⚠️  Attempt {attempt} failed, retrying in {delay:.0f}s...")
+                time.sleep(delay)
 
-        if success:
-            print(f"    ✅ Uploaded")
-            return True
-        else:
-            print(f"    ❌ Failed: {output}")
-            return False
+        print(f"    ❌ Failed after {self.max_retries} attempts: {output}")
+        return False
 
     def upload_image(self, notebook_id: str, file_path: str, mime_type: str) -> bool:
         """
         Upload an image file as a source to the notebook.
         Uses --type file with --mime-type for binary upload.
+        Retries on transient failures.
         """
         filename = os.path.basename(file_path)
         print(f"  🖼️  Uploading image: {filename}")
@@ -122,19 +131,23 @@ class NotebookLMClient:
             print(f"    ❌ Failed to set notebook context")
             return False
 
-        # Upload as file with explicit MIME type
-        success, output = self._run_command([
-            "source", "add", file_path,
-            "--type", "file",
-            "--mime-type", mime_type
-        ])
+        # Upload with retries
+        for attempt in range(1, self.max_retries + 1):
+            success, output = self._run_command([
+                "source", "add", file_path,
+                "--type", "file",
+                "--mime-type", mime_type
+            ])
+            if success:
+                print(f"    ✅ Uploaded")
+                return True
+            if attempt < self.max_retries:
+                delay = self.retry_delay * attempt
+                print(f"    ⚠️  Attempt {attempt} failed, retrying in {delay:.0f}s...")
+                time.sleep(delay)
 
-        if success:
-            print(f"    ✅ Uploaded")
-            return True
-        else:
-            print(f"    ❌ Failed: {output}")
-            return False
+        print(f"    ❌ Failed after {self.max_retries} attempts: {output}")
+        return False
 
     def configure_notebook(self, notebook_id: str, prompt_path: str) -> bool:
         """
