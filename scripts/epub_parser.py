@@ -91,12 +91,18 @@ class EpubParser:
         soup = BeautifulSoup(html_content, 'html.parser')
         return soup.get_text(strip=True)
 
-    def _is_heading_important(self, text: str) -> bool:
+    def _is_heading_important(self, text: str, document_name: Optional[str] = None) -> bool:
         """Check if a heading looks like a chapter title (not front/back matter)."""
         text_lower = text.lower().strip()
+        doc_name_lower = (document_name or "").lower()
 
         # Skip if empty or too short
         if len(text_lower) < 2:
+            return False
+
+        # Skip if document name suggests it's a navigational file
+        nav_patterns = ['nav.xhtml', 'toc.xhtml', 'cover.xhtml', 'title_page']
+        if any(p in doc_name_lower for p in nav_patterns):
             return False
 
         # Skip if matches front/back matter patterns
@@ -105,7 +111,7 @@ class EpubParser:
                 return False
 
         # Skip common non-chapter headings
-        skip_patterns = ['copyright', 'notes', 'footnote', 'copyright page']
+        skip_patterns = ['copyright', 'notes', 'footnote', 'copyright page', 'start', 'cover']
         if any(p in text_lower for p in skip_patterns):
             return False
 
@@ -188,25 +194,80 @@ class EpubParser:
             for item in items:
                 content = item.get_content().decode('utf-8', errors='ignore')
                 soup = BeautifulSoup(content, 'html.parser')
+                doc_name = item.get_name()
 
-                # Find all headings
+                # Find all headings in this document
+                found_headings = []
                 for tag in self.HEADING_TAGS:
                     for heading in soup.find_all(tag):
                         text = heading.get_text(strip=True)
+                        if self._is_heading_important(text, doc_name):
+                            found_headings.append((heading, text))
 
-                        if self._is_heading_important(text):
-                            chapter_num += 1
-                            chapters.append(Chapter(
-                                number=chapter_num,
-                                title=text,
-                                content=str(heading.find_parent()) if heading.find_parent() else "",
-                                href=item.get_name()
-                            ))
+                if not found_headings:
+                    continue
+
+                # If only one primary heading is found in the document, treatment depends on size
+                # Usually better to take the whole document
+                if len(found_headings) == 1:
+                    heading, text = found_headings[0]
+                    chapter_num += 1
+                    chapters.append(Chapter(
+                        number=chapter_num,
+                        title=text,
+                        content=content, # Take the whole document content
+                        href=doc_name
+                    ))
+                else:
+                    # Multiple headings - slice by headings (TBD more complex slicing)
+                    # For now, just take the first one or keep current simple parent logic
+                    for heading, text in found_headings:
+                        chapter_num += 1
+                        chapters.append(Chapter(
+                            number=chapter_num,
+                            title=text,
+                            content=str(heading.find_parent()) if heading.find_parent() else content,
+                            href=doc_name
+                        ))
 
         except Exception as e:
             pass
 
         return chapters
+
+    def _extract_fallback_single_chapter(self) -> List[Chapter]:
+        """
+        Final fallback: If no chapters found, take the largest content document.
+        """
+        try:
+            items = list(self.book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+            content_items = []
+            
+            for item in items:
+                name = item.get_name().lower()
+                if 'nav' in name or 'cover' in name:
+                    continue
+                
+                content = item.get_content().decode('utf-8', errors='ignore')
+                text = BeautifulSoup(content, 'html.parser').get_text(strip=True)
+                if len(text) > 100: # Significant text
+                    content_items.append((len(text), item, content))
+            
+            if not content_items:
+                return []
+            
+            # Sort by length and take the largest
+            content_items.sort(key=lambda x: x[0], reverse=True)
+            _, best_item, best_content = content_items[0]
+            
+            return [Chapter(
+                number=1,
+                title=self.book_title or "Full Book",
+                content=best_content,
+                href=best_item.get_name()
+            )]
+        except Exception:
+            return []
 
     def _fetch_chapter_content(self, chapter: Chapter) -> str:
         """Fetch full content for a chapter from the EPUB."""
@@ -278,6 +339,10 @@ class EpubParser:
         # Fallback to heading-based if needed
         if len(chapters) < self.TOC_MIN_CHAPTERS:
             chapters = self._extract_from_headings()
+
+        # Final fallback for single-document books
+        if not chapters:
+            chapters = self._extract_fallback_single_chapter()
 
         if not chapters:
             raise EpubParseError("Could not extract any chapters from EPUB")

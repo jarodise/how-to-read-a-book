@@ -7,6 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 VENV_BIN="$PROJECT_ROOT/.venv/bin"
+export PATH="$VENV_BIN:$PATH"
 
 # Check if venv exists
 if [ ! -d "$PROJECT_ROOT/.venv" ]; then
