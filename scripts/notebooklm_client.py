@@ -89,7 +89,7 @@ class NotebookLMClient:
 
     def upload_source(self, notebook_id: str, file_path: str) -> bool:
         """
-        Upload a file as a source to the notebook.
+        Upload a text file as a source to the notebook.
         """
         filename = os.path.basename(file_path)
         print(f"  📄 Uploading: {filename}")
@@ -101,6 +101,33 @@ class NotebookLMClient:
 
         # Upload the file
         success, output = self._run_command(["source", "add", file_path])
+
+        if success:
+            print(f"    ✅ Uploaded")
+            return True
+        else:
+            print(f"    ❌ Failed: {output}")
+            return False
+
+    def upload_image(self, notebook_id: str, file_path: str, mime_type: str) -> bool:
+        """
+        Upload an image file as a source to the notebook.
+        Uses --type file with --mime-type for binary upload.
+        """
+        filename = os.path.basename(file_path)
+        print(f"  🖼️  Uploading image: {filename}")
+
+        # Set notebook context first
+        if not self.set_active_notebook(notebook_id):
+            print(f"    ❌ Failed to set notebook context")
+            return False
+
+        # Upload as file with explicit MIME type
+        success, output = self._run_command([
+            "source", "add", file_path,
+            "--type", "file",
+            "--mime-type", mime_type
+        ])
 
         if success:
             print(f"    ✅ Uploaded")
@@ -138,16 +165,31 @@ class NotebookLMClient:
         else:
             raise NotebookLMError(f"Failed to configure notebook: {output}")
 
-    def upload_all_sources(self, notebook_id: str, file_paths: List[str]) -> Dict[str, List[str]]:
+    def upload_all_sources(
+        self,
+        notebook_id: str,
+        file_paths: List[str],
+        image_files: Optional[List[Tuple[str, str]]] = None
+    ) -> Dict[str, List[str]]:
         """
         Upload multiple files and return results summary.
+        image_files is a list of (file_path, mime_type) tuples.
         """
-        results = {"success": [], "failed": []}
+        results = {"success": [], "failed": [], "images_success": [], "images_failed": []}
 
+        # Upload text sources
         for file_path in file_paths:
             if self.upload_source(notebook_id, file_path):
                 results["success"].append(file_path)
             else:
                 results["failed"].append(file_path)
+
+        # Upload image sources
+        if image_files:
+            for file_path, mime_type in image_files:
+                if self.upload_image(notebook_id, file_path, mime_type):
+                    results["images_success"].append(file_path)
+                else:
+                    results["images_failed"].append(file_path)
 
         return results

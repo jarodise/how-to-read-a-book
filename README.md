@@ -1,6 +1,6 @@
 # how-to-read-a-book
 
-Transform EPUB ebooks into chapter-level Markdown sources for NotebookLM, paired with an analytical reading companion persona based on Mortimer J. Adler and Charles van Doren's classic methodology.
+Transform EPUB ebooks into chapter-level Markdown sources for NotebookLM — including embedded images — paired with an analytical reading companion persona based on Mortimer J. Adler and Charles van Doren's classic methodology.
 
 ![Demo](https://img.shields.io/badge/tested-works-green)
 ![License](https://img.shields.io/badge/license-MIT-yellow)
@@ -13,7 +13,7 @@ Transform EPUB ebooks into chapter-level Markdown sources for NotebookLM, paired
 
 ## What It Does
 
-This skill takes an EPUB file, splits it into chapters, and uploads them to NotebookLM as separate sources. Each chapter becomes individually addressable, so you can ask questions like *"What is the main argument of Chapter 3?"* or *"How does Chapter 7 relate to the author's thesis in Chapter 1?"*
+This skill takes an EPUB file, splits it into chapters, extracts embedded images (diagrams, charts, figures), and uploads everything to NotebookLM as separate sources. Each chapter becomes individually addressable, so you can ask questions like *"What is the main argument of Chapter 3?"* or *"How does Chapter 7 relate to the author's thesis in Chapter 1?"* Images are uploaded alongside text, so visual content like diagrams and figures is available to the reading companion.
 
 The NotebookLM notebook is configured with a custom **Analytical Reading Companion** persona that guides you through deep reading using the four levels from *How To Read a Book*:
 
@@ -57,10 +57,11 @@ Once the skill is installed, simply mention you want to read a book with Noteboo
 
 The agent will:
 1. Parse your EPUB and extract chapters
-2. Create a NotebookLM notebook: `{Book Title} — Reading Companion`
-3. Configure the Analytical Reading Companion persona
-4. Upload all chapters as separate sources
-5. Provide you with the NotebookLM URL to start reading
+2. Extract embedded images (diagrams, charts, figures)
+3. Create a NotebookLM notebook: `{Book Title} — Reading Companion`
+4. Configure the Analytical Reading Companion persona
+5. Upload all chapters and images as separate sources
+6. Provide you with the NotebookLM URL to start reading
 
 ### Example Session
 
@@ -70,9 +71,11 @@ The agent will:
 ```
 📖 Found: The Human Use of Human Beings.epub
 📚 Extracted: 15 chapters
+🖼️  Found: 8 images
 📓 Created notebook: The Human Use of Human Beings — Reading Companion
 ⚙️  Configured reading companion persona
 📤 Uploaded all 15 chapters
+🖼️  Uploaded 8 images
 ✅ Done!
 
 🔗 Your notebook: https://notebooklm.google.com/notebook/abc-123
@@ -98,11 +101,13 @@ Once your book is in NotebookLM, try questions like:
 Behind the scenes, the skill:
 
 1. **Parses the EPUB** — Uses TOC-first detection with heading-based fallback
-2. **Splits chapters** — Creates Markdown files with chapter metadata
-3. **Creates notebook** — `{Book Title} — Reading Companion`
-4. **Injects persona** — Configures the Analytical Reading Companion system prompt
-5. **Uploads sources** — Each chapter becomes an addressable source
-6. **Cleans up** — Removes temporary files
+2. **Extracts images** — Pulls embedded PNG/JPG/GIF/WebP images (skips tiny spacers <1KB and SVGs)
+3. **Maps images to chapters** — Scans `<img>` tags to associate images with their chapters
+4. **Splits chapters** — Creates Markdown files with chapter metadata
+5. **Creates notebook** — `{Book Title} — Reading Companion`
+6. **Injects persona** — Configures the Analytical Reading Companion system prompt
+7. **Uploads sources** — Each chapter and image becomes an addressable source
+8. **Cleans up** — Removes temporary files
 
 ## The Reading Companion Persona
 
@@ -121,12 +126,13 @@ The full system prompt is in [`assets/reading_companion_prompt.txt`](assets/read
 how-to-read-a-book/
 ├── SKILL.md                 # Agent instructions
 ├── README.md               # This file
+├── read                    # CLI shortcut
 ├── assets/
 │   └── reading_companion_prompt.txt
 ├── scripts/
 │   ├── run.py             # Main orchestration
-│   ├── epub_parser.py     # EPUB parsing
-│   └── notebooklm_client.py
+│   ├── epub_parser.py     # EPUB + image parsing
+│   └── notebooklm_client.py  # NotebookLM API (text + image upload)
 ├── package.json           # Skill metadata
 ├── requirements.txt       # Python dependencies
 └── install.sh            # Setup helper
@@ -138,6 +144,7 @@ how-to-read-a-book/
 - **Local files only** — No URL downloading
 - **Single persona** — One universal reading companion
 - **Requires auth** — You must be logged into NotebookLM (`notebooklm login`)
+- **Image filtering** — Images under 1KB and SVGs are skipped (spacers, decorators)
 
 ## Troubleshooting
 
@@ -158,6 +165,9 @@ pip install -r requirements.txt
 
 # Run directly
 python scripts/run.py /path/to/book.epub
+
+# Or use the CLI shortcut
+./read /path/to/book.epub
 ```
 
 ## Inspired By

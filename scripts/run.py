@@ -37,7 +37,7 @@ if (
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from epub_parser import EpubParser, EpubParseError
+    from epub_parser import EpubParser, EpubParseError, Image
     from notebooklm_client import NotebookLMClient, NotebookLMError
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -115,6 +115,33 @@ def save_chapter_to_file(chapter, book_title: str, temp_dir: str) -> str:
     return filepath
 
 
+def save_images_to_dir(images: list, temp_dir: str) -> list:
+    """
+    Save extracted images to the temp directory.
+    Returns list of (file_path, mime_type) tuples.
+    """
+    image_files = []
+    images_dir = os.path.join(temp_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
+    for img in images:
+        # Use basename of original name, prefixed with chapter ref if available
+        basename = os.path.basename(img.name)
+        if img.chapter_ref:
+            safe_name = f"ch{img.chapter_ref:02d}_{basename}"
+        else:
+            safe_name = basename
+
+        filepath = os.path.join(images_dir, safe_name)
+
+        with open(filepath, 'wb') as f:
+            f.write(img.data)
+
+        image_files.append((filepath, img.media_type))
+
+    return image_files
+
+
 def main():
     """Main entry point."""
     if len(sys.argv) < 2:
@@ -134,6 +161,8 @@ def main():
         "book_title": None,
         "chapter_count": 0,
         "sources_uploaded": 0,
+        "images_extracted": 0,
+        "images_uploaded": 0,
         "error": None
     }
 
@@ -162,12 +191,15 @@ def main():
         # Step 2: Parse EPUB
         print_progress("📚 Parsing EPUB structure...")
         parser = EpubParser()
-        book_title, chapters = parser.parse(str(epub_path))
+        book_title, chapters, images = parser.parse(str(epub_path))
         print_progress(f"   ✅ Found: {len(chapters)} chapters")
         print_progress(f"   📕 Title: {book_title}")
+        if images:
+            print_progress(f"   🖼️  Found: {len(images)} images")
 
         result["book_title"] = book_title
         result["chapter_count"] = len(chapters)
+        result["images_extracted"] = len(images)
 
         # Step 3: Create temp directory
         temp_dir = tempfile.mkdtemp(prefix="epub_reader_")
@@ -180,6 +212,13 @@ def main():
             filepath = save_chapter_to_file(chapter, book_title, temp_dir)
             chapter_files.append(filepath)
             print_progress(f"   ✓ {os.path.basename(filepath)}")
+
+        # Step 4b: Save images to temp directory
+        image_files = []
+        if images:
+            print_progress("🖼️  Saving images...")
+            image_files = save_images_to_dir(images, temp_dir)
+            print_progress(f"   ✅ Saved {len(image_files)} images")
 
         # Step 5: Create NotebookLM notebook
         print_progress("📓 Creating NotebookLM notebook...")
@@ -199,18 +238,24 @@ def main():
 
         client.configure_notebook(notebook_id, str(prompt_path))
 
-        # Step 7: Upload sources
+        # Step 7: Upload sources (chapters + images)
         print_progress("📤 Uploading chapters to NotebookLM...")
-        upload_results = client.upload_all_sources(notebook_id, chapter_files)
+        upload_results = client.upload_all_sources(
+            notebook_id,
+            chapter_files,
+            image_files=image_files if image_files else None
+        )
 
         result["sources_uploaded"] = len(upload_results["success"])
+        result["images_uploaded"] = len(upload_results.get("images_success", []))
 
         # Step 8: Cleanup
-        if len(upload_results["failed"]) == 0:
+        all_failed = upload_results["failed"] + upload_results.get("images_failed", [])
+        if len(all_failed) == 0:
             print_progress("🧹 Cleaning up...")
             shutil.rmtree(temp_dir, ignore_errors=True)
         else:
-            print_progress(f"⚠️  {len(upload_results['failed'])} uploads failed.")
+            print_progress(f"⚠️  {len(all_failed)} uploads failed.")
             print_progress(f"   Temp files preserved: {temp_dir}")
 
         # Success!
@@ -224,9 +269,12 @@ def main():
         print_progress(f"📕 Book: {book_title}")
         print_progress(f"📚 Notebook: {notebook_title}")
         print_progress(f"📖 Chapters uploaded: {len(upload_results['success'])}/{len(chapters)}")
+        if images:
+            print_progress(f"🖼️  Images uploaded: {len(upload_results.get('images_success', []))}/{len(images)}")
         if upload_results["failed"]:
-            print_progress(f"❌ Failed: {len(upload_results['failed'])}")
-        print_progress("")
+            print_progress(f"❌ Failed chapters: {len(upload_results['failed'])}")
+        if upload_results.get("images_failed"):
+            print_progress(f"❌ Failed images: {len(upload_results['images_failed'])}")
         print_progress(f"🔗 Notebook URL: {result['notebook_url']}")
         print_progress("")
         print_progress("💡 The reading companion persona is now active.")

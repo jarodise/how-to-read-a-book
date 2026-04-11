@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-EPUB Parser Module - Extract book metadata and chapter structure from EPUB files.
+EPUB Parser Module - Extract book metadata, chapter structure, and images from EPUB files.
 
 Uses TOC-first parsing with heading-based fallback for robust chapter detection.
+Extracts embedded images for upload as separate sources.
 """
 
+import os
 import re
 import html
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 import unicodedata
 
 try:
@@ -22,12 +24,22 @@ except ImportError as e:
 
 
 @dataclass
+class Image:
+    """Represents an image extracted from the EPUB."""
+    name: str              # Original name in EPUB (e.g. "images/figure1.png")
+    media_type: str        # MIME type (e.g. "image/png")
+    data: bytes            # Raw binary data
+    chapter_ref: Optional[int] = None  # Which chapter references this image
+
+
+@dataclass
 class Chapter:
     """Represents a single chapter from the book."""
     number: int
     title: str
     content: str  # HTML content
     href: Optional[str] = None
+    image_names: List[str] = field(default_factory=list)  # Image names referenced by this chapter
 
 
 class EpubParseError(Exception):
@@ -311,14 +323,124 @@ class EpubParser:
 
         return "Untitled Book"
 
-    def parse(self, epub_path: str) -> Tuple[str, List[Chapter]]:
+    # Minimum image size in bytes to keep (skip spacers/decorators)
+    IMAGE_MIN_SIZE = 1024  # 1KB
+
+    # Supported image MIME types for NotebookLM upload
+    SUPPORTED_IMAGE_TYPES = {
+        'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'
+    }
+
+    def _extract_images(self) -> List[Image]:
         """
-        Parse EPUB and return (book_title, chapters).
+        Extract all meaningful images from the EPUB.
+        Skips tiny spacer images (<1KB) and unsupported formats (SVG).
+        """
+        images = []
+        seen_names = set()
+
+        try:
+            # Get images from ITEM_IMAGE
+            for item in self.book.get_items_of_type(ebooklib.ITEM_IMAGE):
+                name = item.get_name()
+                media_type = item.media_type
+                data = item.get_content()
+
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+
+                # Skip unsupported types (SVG, etc.)
+                if media_type not in self.SUPPORTED_IMAGE_TYPES:
+                    continue
+
+                # Skip tiny images (spacers, bullets, decorators)
+                if len(data) < self.IMAGE_MIN_SIZE:
+                    continue
+
+                images.append(Image(
+                    name=name,
+                    media_type=media_type,
+                    data=data
+                ))
+
+            # Also check for cover images
+            for item in self.book.get_items_of_type(ebooklib.ITEM_COVER):
+                name = item.get_name()
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+
+                media_type = item.media_type
+                data = item.get_content()
+
+                if media_type not in self.SUPPORTED_IMAGE_TYPES:
+                    continue
+                if len(data) < self.IMAGE_MIN_SIZE:
+                    continue
+
+                images.append(Image(
+                    name=name,
+                    media_type=media_type,
+                    data=data
+                ))
+
+        except Exception as e:
+            # Non-fatal: proceed without images if extraction fails
+            pass
+
+        return images
+
+    def _map_images_to_chapters(self, chapters: List[Chapter], images: List[Image]) -> None:
+        """
+        Scan chapter HTML for <img> tags and associate images with chapters.
+        Updates chapter.image_names and image.chapter_ref in place.
+        """
+        # Build lookup: basename and full name -> image index
+        image_lookup: Dict[str, int] = {}
+        for idx, img in enumerate(images):
+            image_lookup[img.name] = idx
+            # Also index by basename for relative path matching
+            basename = os.path.basename(img.name)
+            if basename not in image_lookup:
+                image_lookup[basename] = idx
+
+        for chapter in chapters:
+            if not chapter.content:
+                continue
+
+            soup = BeautifulSoup(chapter.content, 'html.parser')
+            for img_tag in soup.find_all('img'):
+                src = img_tag.get('src', '')
+                if not src:
+                    continue
+
+                # Try matching by full path, basename, or URL-decoded variants
+                matched_idx = None
+                for candidate in [src, os.path.basename(src)]:
+                    # Strip leading ../ or ./
+                    cleaned = re.sub(r'^(\.\./)+', '', candidate)
+                    cleaned = re.sub(r'^\./+', '', cleaned)
+                    if cleaned in image_lookup:
+                        matched_idx = image_lookup[cleaned]
+                        break
+
+                if matched_idx is not None:
+                    img_obj = images[matched_idx]
+                    if img_obj.name not in chapter.image_names:
+                        chapter.image_names.append(img_obj.name)
+                    if img_obj.chapter_ref is None:
+                        img_obj.chapter_ref = chapter.number
+
+    def parse(self, epub_path: str) -> Tuple[str, List[Chapter], List[Image]]:
+        """
+        Parse EPUB and return (book_title, chapters, images).
 
         Strategy:
         1. Try TOC-first extraction
         2. If TOC yields < 3 chapters, fall back to heading-based
         3. Fetch content for each chapter
+        4. Extract and map images to chapters
         """
         epub_path = Path(epub_path)
 
@@ -352,7 +474,12 @@ class EpubParser:
             chapter.number = i + 1
             chapter.content = self._fetch_chapter_content(chapter)
 
-        return self.book_title, chapters
+        # Extract images and map to chapters
+        images = self._extract_images()
+        if images:
+            self._map_images_to_chapters(chapters, images)
+
+        return self.book_title, chapters, images
 
 
 def main():
@@ -364,12 +491,17 @@ def main():
         sys.exit(1)
 
     parser = EpubParser()
-    title, chapters = parser.parse(sys.argv[1])
+    title, chapters, images = parser.parse(sys.argv[1])
 
     print(f"Book: {title}")
     print(f"Chapters: {len(chapters)}")
     for ch in chapters[:5]:  # Show first 5
-        print(f"  {ch.number}: {ch.title}")
+        img_info = f" ({len(ch.image_names)} images)" if ch.image_names else ""
+        print(f"  {ch.number}: {ch.title}{img_info}")
+    print(f"Images: {len(images)}")
+    for img in images[:10]:  # Show first 10
+        ch_info = f" (ch.{img.chapter_ref})" if img.chapter_ref else ""
+        print(f"  {os.path.basename(img.name)} [{img.media_type}] {len(img.data)}B{ch_info}")
 
 
 if __name__ == "__main__":
